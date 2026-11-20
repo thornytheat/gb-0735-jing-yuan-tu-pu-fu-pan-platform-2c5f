@@ -27,6 +27,22 @@ class RunStore:
                     pinned TEXT NOT NULL
                 )
             """)
+            connection.execute("""
+                CREATE TABLE IF NOT EXISTS wafer_rulings (
+                    run_id TEXT NOT NULL REFERENCES wafer_runs(run_id),
+                    wafer TEXT NOT NULL,
+                    x INTEGER NOT NULL,
+                    y INTEGER NOT NULL,
+                    row_id TEXT NOT NULL,
+                    attempt INTEGER NOT NULL,
+                    result TEXT NOT NULL,
+                    bin INTEGER NOT NULL,
+                    reviewer TEXT NOT NULL,
+                    note TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (run_id, wafer, x, y)
+                )
+            """)
 
     def put(self, manifest, snapshot, pinned):
         with self.connect() as connection:
@@ -51,3 +67,35 @@ class RunStore:
         with self.connect() as connection:
             rows = connection.execute("SELECT manifest FROM wafer_runs ORDER BY rowid DESC").fetchall()
         return [json.loads(row[0]) for row in rows]
+
+    RULING_COLUMNS = ("wafer", "x", "y", "row_id", "attempt", "result", "bin",
+                      "reviewer", "note", "created_at")
+
+    def put_ruling(self, run_id, ruling):
+        values = tuple(ruling[column] for column in self.RULING_COLUMNS)
+        with self.connect() as connection:
+            cursor = connection.execute(
+                f"INSERT INTO wafer_rulings VALUES (?, {', '.join('?' * len(values))}) "
+                "ON CONFLICT(run_id, wafer, x, y) DO NOTHING",
+                (run_id, *values),
+            )
+            created = cursor.rowcount == 1
+        return self.find_ruling(run_id, ruling["wafer"], ruling["x"], ruling["y"]), created
+
+    def find_ruling(self, run_id, wafer, x, y):
+        with self.connect() as connection:
+            row = connection.execute(
+                f"SELECT {', '.join(self.RULING_COLUMNS)} FROM wafer_rulings "
+                "WHERE run_id = ? AND wafer = ? AND x = ? AND y = ?",
+                (run_id, wafer, x, y),
+            ).fetchone()
+        return dict(zip(self.RULING_COLUMNS, row)) if row else None
+
+    def rulings(self, run_id):
+        with self.connect() as connection:
+            rows = connection.execute(
+                f"SELECT {', '.join(self.RULING_COLUMNS)} FROM wafer_rulings "
+                "WHERE run_id = ? ORDER BY rowid",
+                (run_id,),
+            ).fetchall()
+        return [dict(zip(self.RULING_COLUMNS, row)) for row in rows]

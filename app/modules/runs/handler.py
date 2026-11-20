@@ -35,7 +35,8 @@ def run(archive: Archive):
 
 
 @router.get("/{run_id}/export")
-def export_bundle(archive: Archive):
+def export_bundle(archive: Archive, service: Service):
     filename = f'wafer-{archive[0]["run_id"][:16]}.json'
-    return Response(make_bundle(archive), media_type="application/json",
+    rulings = service.store.rulings(archive[0]["run_id"])
+    return Response(make_bundle(archive, rulings), media_type="application/json",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})

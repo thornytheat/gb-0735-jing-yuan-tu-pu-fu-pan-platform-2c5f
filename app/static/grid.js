@@ -11,8 +11,9 @@ function columnName(index) {
   return name;
 }
 
-export async function mapView({api, base, wafer, params, signal}) {
+export async function mapView({api, base, wafer, params, signal, post, refresh}) {
   const data = await api(`${base}/mask/${wafer}`);
+  const review = {post, base, refresh};
   const {radius, edge, notch_depth: depth} = data.geometry;
   const size = radius * 2 + 1;
   text('#map-size', `${wafer} · ${size} × ${size}`);
@@ -78,7 +79,7 @@ export async function mapView({api, base, wafer, params, signal}) {
     target.replaceChildren(element('p', '正在读取芯粒…', 'empty'));
     try {
       const detail = await api(`${base}/mask/${wafer}/cell?x=${x}&y=${y}`);
-      if (index === request && !signal.aborted) renderCell(target, detail);
+      if (index === request && !signal.aborted) renderCell(target, detail, review);
     } catch (error) {
       if (index === request && !signal.aborted) failure(target, error);
     }

@@ -41,6 +41,15 @@
 .evidence-id { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px; font-size: 11px; color: var(--ink-2); }
 .evidence-values { font: 11px/1.5 var(--mono); }
 .evidence-note { color: var(--ink-3); font-size: 11px; margin-top: 3px; }
+.status.adopted { color: var(--accent-ink); }
+.decision-cell { display: inline-flex; gap: 4px; align-items: center; }
+.adopt-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); gap: 5px; margin-top: 8px; padding: 6px; border: 1px dashed var(--line-2); }
+.adopt-form label { min-width: 0; display: grid; gap: 3px; color: var(--ink-3); font-size: 11px; }
+.adopt-form .adopt-hint, .adopt-form .inline-error { grid-column: 1 / -1; margin: 0; padding: 0; font-size: 11px; }
+.adopt-form .adopt-hint { color: var(--ink-3); }
+.adopt-btn { margin-top: 5px; font-size: 11px; }
+.ruling-card { border-color: var(--accent); background: var(--accent-soft); }
+.adopted-row { border-color: var(--accent); }
 .probe-form { display: grid; grid-template-columns: minmax(0, 1.8fr) repeat(2, minmax(0, 1fr)) auto; gap: 5px; align-items: end; margin-bottom: 8px; }
 .probe-form label { min-width: 0; display: grid; gap: 3px; color: var(--ink-3); font-size: 11px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px 7px; border-bottom: 1px solid var(--line); }

@@ -17,6 +17,8 @@ async function api(path, settings) {
   return data;
 }
 
+const post = (path, body) => api(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+
 function feedback(message, error = false) {
   const panel = q('#feedback');
   panel.hidden = !message;
@@ -31,15 +33,15 @@ function controls() {
   waferSelect.disabled = state.working || !state.run;
 }
 
-function labelsFor(run, wafer, totals) {
+function labelsFor(run, wafer, totals, effectiveStatus) {
   text('#lot', run.lot);
   text('#rail-run', run.run_id.slice(0, 12));
   text('#version', run.rule_version);
   text('#created', `${run.created_at.slice(0, 19).replace('T', ' ')} UTC`);
   q('#created').dateTime = run.created_at;
   const badge = q('#batch-status');
-  badge.textContent = labels[run.status];
-  badge.className = `status ${run.status === 'MATCH' ? 'pass' : 'pending'}`;
+  badge.textContent = labels[effectiveStatus];
+  badge.className = `status ${effectiveStatus === 'MATCH' ? 'pass' : 'pending'}`;
   text('#scope-text', `${wafer} · 南缺口 · X→ / Y↑`);
   for (const key of ['valid','passed','failed','pending','conflict','yield_pct']) {
     text(`#kpi-${key}`, key === 'yield_pct' ? (totals[key] == null ? '—' : `${totals[key]}%`) : number(totals[key]));
@@ -68,12 +70,16 @@ async function display(run, selected, manifests, params = new URLSearchParams())
   view.hidden = true;
   text('#connection', '正在载入');
   const audit = await request(`${base}/yield`);
-  const context = {api: request, base, wafer, run, signal: controller.signal, audit, manifests, params};
+  const refresh = async (message) => {
+    await display(run, wafer, manifests);
+    if (message) feedback(message);
+  };
+  const context = {api: request, post, base, wafer, run, signal: controller.signal, audit, manifests, params, refresh};
   await (stage === 'mask' ? mapView(context) : views[stage](context));
   state.run = run;
   state.wafer = wafer;
   options(waferSelect, run.wafers.map((id) => [id, id]), wafer);
-  labelsFor(run, wafer, ['yield','runs','intake','coordinates'].includes(stage) ? audit.summary : audit.wafers.find((row) => row.wafer === wafer));
+  labelsFor(run, wafer, ['yield','runs','intake','coordinates'].includes(stage) ? audit.summary : audit.wafers.find((row) => row.wafer === wafer), audit.status);
   runAddress(params, run, wafer);
   exportLink.href = `${base}/export`;
   exportLink.hidden = false;

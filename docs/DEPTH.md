@@ -14,6 +14,7 @@
 | M5 缺陷簇 | 检查四邻域成员、分档和原行 | `GET /api/runs/{run_id}/clusters/{wafer}` | `app/modules/clusters/components.py` | `tests/test_clusters.py` |
 | M6 良率勾稽 | 核对坐标集合、实收和交接差值 | `GET /api/runs/{run_id}/yield` | `app/modules/yield_audit/compare.py` | `tests/test_yield.py` |
 | M7 图批复盘 | 原子运行、按归档重算、核验后导出 | `POST /api/runs` `POST /api/runs/{run_id}/rerun` `GET /api/runs/{run_id}/export` | `app/modules/runs/pipeline.py` `app/modules/runs/service.py` `app/modules/runs/bundle.py` `app/store.py` | `tests/test_runs.py` |
+| M8 采信结论 | 为冲突芯粒采信同次原始行，重算有效视图 | `POST /api/runs/{run_id}/rulings` `GET /api/runs/{run_id}/rulings` | `app/modules/rulings/service.py` `app/modules/rulings/effective.py` `app/store.py` | `tests/test_rulings.py` |
 
 ## 陷阱登记
 
@@ -39,3 +40,5 @@
 - 有效位集合与裁决键集合相等，有效数守恒到四类最终状态。
 - 实收行按五类互斥归档，声明的逻辑数据量可独立回推。
 - 对外提供一份证据包，同一规则版本下输入相同时运行号与结果摘要一致。
+- 采信结论按图批 + 晶圆 + 坐标唯一，只增不改；结论只改变芯粒最终状态，隔离账、测次链与原始行不变。
+- 有效视图 = 归档快照 + 采信结论叠加，缺陷簇与勾稽按同一份证据重算；结论发布失败时旧视图不变。

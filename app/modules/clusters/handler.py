@@ -1,18 +1,18 @@
 from fastapi import APIRouter
 
-from app.dependencies import Archive, for_wafer
+from app.dependencies import Review, for_wafer
 from app.errors import ReviewError
 
 router = APIRouter(prefix="/api/runs/{run_id}/clusters")
 
 
 @router.get("/{wafer}")
-def clusters(archive: Archive, wafer: str):
+def clusters(archive: Review, wafer: str):
     return for_wafer(archive[1]["clusters"], wafer)
 
 
 @router.get("/{wafer}/{group_id}")
-def cluster(archive: Archive, wafer: str, group_id: str):
+def cluster(archive: Review, wafer: str, group_id: str):
     snapshot = archive[1]
     for group in for_wafer(snapshot["clusters"], wafer):
         if group["id"] == group_id:

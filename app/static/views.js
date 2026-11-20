@@ -89,10 +89,11 @@ const issueColumns = [
   ['原因码', 'code', 'mono'], ['原因', 'reason'], ['原始字段', (row) => row.raw.map((value) => JSON.stringify(value)).join(' · ')],
 ];
 
-function evidenceCard(row) {
+function evidenceCard(row, ruling, adoptable, adopt) {
   const card = element('article', null, 'evidence-row');
   const header = element('div', null, 'evidence-id');
-  header.append(element('strong', `${row.source}:${line(row)}`, 'mono'), element('span', row.code ?? '采信'));
+  const tag = ruling?.row_id === row.id ? '已采信' : (row.code ?? '采信');
+  header.append(element('strong', `${row.source}:${line(row)}`, 'mono'), element('span', tag));
   const fields = row.fields;
   const measurement = fields ? `${original(row)}   T${fields.attempt}   ${fields.result || '∅'}   BIN ${fields.bin || '∅'}` : '';
   card.append(header, element('p', measurement, 'evidence-values'));
@@ -101,20 +102,94 @@ function evidenceCard(row) {
     card.append(element('p', `轴向 ${vector(translated)} · 镜像 ${vector(mirrored)} · ${turn_degrees}° → ${vector(canonical)}`, 'evidence-note'));
   }
   if (fields?.note) card.append(element('p', fields.note, 'evidence-note'));
+  if (adopt && adoptable.has(row.id) && row.measurement) {
+    const value = row.measurement;
+    const button = element('button', `采信此行（${labels[value.result]} BIN ${value.bin}）`, 'btn adopt-btn');
+    button.type = 'button';
+    button.addEventListener('click', () => adopt(row, button));
+    card.append(button);
+  }
+  if (ruling?.row_id === row.id) card.classList.add('adopted-row');
   return card;
 }
 
-export function renderCell(box, cell) {
+function rulingCard(ruling) {
+  const card = element('article', null, 'evidence-row ruling-card');
+  const header = element('div', null, 'evidence-id');
+  header.append(element('strong', '采信结论'), element('span', `${ruling.created_at.slice(0, 19).replace('T', ' ')} UTC`, 'mono'));
+  card.append(header, element('p', `采信原行 ${ruling.row_id} · 复核人 ${ruling.reviewer}`, 'evidence-values'));
+  if (ruling.note) card.append(element('p', ruling.note, 'evidence-note'));
+  card.append(element('p', '原冲突行保留在隔离账；缺陷簇、批次良率与交接差额已按此结论重算。', 'evidence-note'));
+  return card;
+}
+
+function adoptForm(cell, review) {
+  const form = element('form', null, 'adopt-form');
+  const reviewer = element('input');
+  reviewer.maxLength = 30;
+  reviewer.required = true;
+  reviewer.placeholder = '工号或姓名';
+  reviewer.setAttribute('aria-label', '复核人');
+  const note = element('input');
+  note.maxLength = 200;
+  note.placeholder = '采信依据说明（可选）';
+  note.setAttribute('aria-label', '备注');
+  const error = element('p', null, 'inline-error');
+  error.hidden = true;
+  const labelFor = (title, input) => {
+    const label = element('label', title);
+    label.append(input);
+    return label;
+  };
+  form.append(labelFor('复核人', reviewer), labelFor('备注', note),
+    element('p', '结论只能采信同次冲突的原始行；原行保留，图批按同一份证据重算。', 'adopt-hint'), error);
+  form.addEventListener('submit', (event) => event.preventDefault());
+  const adopt = async (row, button) => {
+    const name = reviewer.value.trim();
+    if (!name) {
+      error.textContent = '请填写复核人。';
+      error.hidden = false;
+      reviewer.focus();
+      return;
+    }
+    button.disabled = true;
+    error.hidden = true;
+    try {
+      const result = await review.post(`${review.base}/rulings`, {
+        wafer: cell.wafer, x: cell.x, y: cell.y, row_id: row.id, reviewer: name, note: note.value.trim(),
+      });
+      await review.refresh(result.reused ? '相同采信结论已归档，未新增裁决。' : `已采信 ${row.id}，缺陷簇、良率与交接差额已重算。`);
+    } catch (failureReason) {
+      button.disabled = false;
+      error.textContent = `${failureReason.message} 争议保持冲突。`;
+      error.hidden = false;
+    }
+  };
+  return {form, adopt};
+}
+
+export function renderCell(box, cell, review) {
   const decision = cell.decision;
   const heading = element('div', null, 'detail-title');
   heading.append(element('strong', vector([cell.x, cell.y])), status(decision?.result ?? cell.eligibility));
+  if (decision?.ruling) heading.append(element('span', '已采信', 'status adopted'));
   if (cell.cluster) heading.append(element('span', cell.cluster, 'mono'));
   box.replaceChildren(heading, pairs([['晶圆', cell.wafer], ['测次', decision?.attempt], ['分档', decision?.bin], ['原始行', cell.evidence.length]]));
   if (decision?.history.length) {
     const history = decision.history.map((item) => `T${item.attempt} ${labels[item.result]}`).join(' → ');
     box.append(element('p', history, 'data-strip detail-group'));
   }
-  for (const row of cell.evidence) box.append(evidenceCard(row));
+  const ruling = decision?.ruling;
+  if (ruling) box.append(rulingCard(ruling));
+  let adoptable = null;
+  let adopt = null;
+  if (!ruling && decision?.result === 'CONFLICT' && review) {
+    adoptable = new Set(decision.evidence);
+    const panel = adoptForm(cell, review);
+    adopt = panel.adopt;
+    box.append(panel.form);
+  }
+  for (const row of cell.evidence) box.append(evidenceCard(row, ruling, adoptable, adopt));
   if (!cell.evidence.length) box.append(element('p', '该位置暂无原始行。', 'empty'));
 }
 
@@ -192,18 +267,24 @@ function detailLoader(target, signal) {
 }
 
 async function retest(context) {
-  const {api, base, wafer, signal} = context;
+  const {api, base, wafer, signal, post, refresh} = context;
   const data = await api(`${base}/retest/${wafer}`);
   const filter = q('#retest-filter');
   const target = q('#retest-detail');
   const load = detailLoader(target, signal);
-  const show = (x, y) => load(() => api(`${base}/mask/${wafer}/cell?x=${x}&y=${y}`), (cell) => renderCell(target, cell));
+  const review = {post, base, refresh};
+  const show = (x, y) => load(() => api(`${base}/mask/${wafer}/cell?x=${x}&y=${y}`), (cell) => renderCell(target, cell, review));
   const draw = () => {
     const rows = data.cells.filter((cell) => filter.value === 'all' || cell.result === filter.value);
     text('#retest-total', `${rows.length} 枚`);
     table(q('#retest-rows'), rows, [
       ['坐标', (cell) => rowButton(vector([cell.x,cell.y]), () => show(cell.x, cell.y))],
-      ['裁决', (cell) => status(cell.result)], ['末次', 'attempt', 'num'], ['分档', 'bin', 'num'],
+      ['裁决', (cell) => {
+        const wrap = element('span', null, 'decision-cell');
+        wrap.append(status(cell.result));
+        if (cell.ruling) wrap.append(element('span', '采信', 'status adopted'));
+        return wrap;
+      }], ['末次', 'attempt', 'num'], ['分档', 'bin', 'num'],
       ['测次链', (cell) => cell.history.map((step) => `T${step.attempt} ${labels[step.result]}`).join(' → ')],
     ]);
     if (rows.length) q('button', q('#retest-rows')).click();
